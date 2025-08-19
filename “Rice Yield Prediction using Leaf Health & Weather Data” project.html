@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rice Leaf Advisor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+
+  <div class="max-w-5xl mx-auto p-6">
+    <h1 class="text-3xl font-bold mb-2">Rice Leaf Advisor</h1>
+    <p class="text-sm text-gray-600 mb-6">
+      Upload a rice leaf image and enter basic weather data.  
+      This demo analyzes the leaf color and gives fertilizer advice + estimated harvest time.
+    </p>
+
+    <!-- Inputs -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div class="col-span-2 bg-white p-4 rounded-2xl shadow">
+        <!-- Image Upload -->
+        <label class="block text-sm font-medium text-gray-700">Leaf Image</label>
+        <div class="mt-2 flex items-center gap-4">
+          <label class="inline-flex items-center px-4 py-2 bg-slate-50 rounded-lg border cursor-pointer hover:bg-slate-100">
+            <input type="file" accept="image/*" id="leafInput" class="hidden" />
+            Upload Photo
+          </label>
+          <img id="leafPreview" class="h-20 w-20 object-cover rounded-md border hidden" />
+          <div id="avgGreenBox" class="ml-auto text-right text-sm text-gray-500">
+            Avg Green Index: —<br>
+            <span class="text-xs">(calculated from image)</span>
+          </div>
+        </div>
+
+        <hr class="my-4" />
+
+        <!-- Weather Inputs -->
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Temperature (°C)</label>
+            <input type="number" id="temp" value="28" class="mt-1 block w-full rounded-md border px-3 py-2" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Humidity (%)</label>
+            <input type="number" id="humidity" value="70" class="mt-1 block w-full rounded-md border px-3 py-2" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Rainfall (mm last 7 days)</label>
+            <input type="number" id="rainfall" value="5" class="mt-1 block w-full rounded-md border px-3 py-2" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Days since transplant</label>
+            <input type="number" id="days" value="45" class="mt-1 block w-full rounded-md border px-3 py-2" />
+          </div>
+        </div>
+
+        <div class="mt-4 flex gap-3">
+          <button id="predictBtn" class="px-4 py-2 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700">Predict & Recommend</button>
+          <button id="resetBtn" class="px-4 py-2 rounded-lg bg-slate-100">Reset</button>
+        </div>
+      </div>
+
+      <!-- Output -->
+      <div class="col-span-1 bg-white p-4 rounded-2xl shadow">
+        <h3 class="text-lg font-semibold mb-2">Prediction</h3>
+        <div id="output" class="text-sm text-gray-500">No prediction yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden Canvas for analysis -->
+  <canvas id="canvas" style="display:none"></canvas>
+
+  <script>
+    const leafInput = document.getElementById('leafInput');
+    const leafPreview = document.getElementById('leafPreview');
+    const avgGreenBox = document.getElementById('avgGreenBox');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let avgGreen = null;
+
+    leafInput.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = evt => {
+        const img = new Image();
+        img.onload = () => {
+          // scale to 300px max
+          const maxDim = 300;
+          let { width, height } = img;
+          const scale = Math.min(1, maxDim / Math.max(width, height));
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+          canvas.width = width;
+          canvas.height = height;
+          ctx.drawImage(img, 0, 0, width, height);
+          const data = ctx.getImageData(0, 0, width, height).data;
+          let r=0,g=0,b=0,count=0;
+          for(let i=0;i<data.length;i+=4){
+            r+=data[i]; g+=data[i+1]; b+=data[i+2]; count++;
+          }
+          const avgR=r/count, avgG=g/count, avgB=b/count;
+          avgGreen = avgG / (avgR+avgG+avgB);
+          avgGreenBox.innerHTML = "Avg Green Index: <b>" + avgGreen.toFixed(3) + "</b><br><span class='text-xs'>(calculated from image)</span>";
+          leafPreview.src = evt.target.result;
+          leafPreview.classList.remove("hidden");
+        };
+        img.src = evt.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    document.getElementById('predictBtn').addEventListener('click', () => {
+      const temp = Number(document.getElementById('temp').value);
+      const humidity = Number(document.getElementById('humidity').value);
+      const rainfall = Number(document.getElementById('rainfall').value);
+      const days = Number(document.getElementById('days').value);
+
+      let remaining = Math.max(0, 120 - days);
+      if (temp > 32) remaining = Math.round(remaining*0.9);
+      if (temp < 20) remaining = Math.round(remaining*1.1);
+      if (rainfall > 20) remaining = Math.round(remaining*1.05);
+
+      let health = "Unknown";
+      let ferts = [];
+      let notes = [];
+
+      if(avgGreen===null){
+        health="Not analyzed";
+        ferts.push("General NPK (20-20-20)");
+      } else if(avgGreen>=0.46){
+        health="Healthy";
+        ferts.push("Balanced NPK (20-20-20)");
+        ferts.push("Micronutrient spray if growth slows");
+      } else if(avgGreen>=0.38){
+        health="Moderate (mild yellowing)";
+        ferts.push("Nitrogen (Urea)");
+        ferts.push("Zinc/Iron if deficiency suspected");
+      } else {
+        health="Poor (yellowing/deficiency)";
+        ferts.push("Nitrogen (Urea) + Zinc foliar spray");
+        ferts.push("Check for fungal disease");
+      }
+
+      if(humidity>85 && rainfall>15){
+        notes.push("High humidity + rainfall → fungal risk. Consider protective fungicide.");
+      }
+
+      let outHtml = `<div class='mb-2 text-gray-700'>Health: <b>${health}</b></div>`;
+      outHtml += "<div class='mb-2'><b>Recommended Fertilizers:</b><ul class='list-disc pl-5'>";
+      ferts.forEach(f=>outHtml+=`<li>${f}</li>`);
+      outHtml+="</ul></div>";
+      if(notes.length>0){
+        outHtml += "<div class='mb-2'><b>Notes:</b><ul class='list-disc pl-5'>";
+        notes.forEach(n=>outHtml+=`<li>${n}</li>`);
+        outHtml+="</ul></div>";
+      }
+      outHtml += `<div class='mt-2 bg-slate-50 p-2 rounded-lg'>Estimated harvest in <b>${remaining} days</b></div>`;
+      document.getElementById('output').innerHTML = outHtml;
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      leafInput.value = '';
+      leafPreview.classList.add('hidden');
+      document.getElementById('output').innerHTML = "No prediction yet.";
+      avgGreenBox.innerHTML = "Avg Green Index: —<br><span class='text-xs'>(calculated from image)</span>";
+      avgGreen=null;
+    });
+  </script>
+
+</body>
+</html>
